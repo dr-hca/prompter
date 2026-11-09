@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="tr" manifest="prompter.appcache">
+<head>
+<meta charset="utf-8">
+<title>Prompter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: rgba(0,0,0,0); }
+html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
+  font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%; -webkit-user-select: none; user-select: none; }
+body { position: fixed; top: 0; right: 0; bottom: 0; left: 0; }
+
+/* Metin alanı: ayna dönüşümü yalnızca buraya uygulanır, düğmeler düz kalır */
+#stage { position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; background: #000; }
+#mirror { position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; }
+#scroller { position: absolute; top: 0; left: 0; right: 0;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+#text { padding-left: 6%; padding-right: 6%; font-weight: 600; line-height: 1.35; text-align: center;
+  white-space: pre-wrap; word-wrap: break-word; color: #fff; }
+.guide { position: absolute; width: 0; height: 0; margin-top: -14px;
+  border-top: 14px solid transparent; border-bottom: 14px solid transparent; }
+#guideL { left: 0; border-left: 20px solid #e5484d; }
+#guideR { right: 0; border-right: 20px solid #e5484d; }
+
+/* Üst kontrol çubuğu */
+#bar { position: absolute; top: 0; left: 0; right: 0; padding: 8px 10px; background: #1b1b1d;
+  border-bottom: 1px solid #38383c; display: -webkit-flex; display: flex;
+  -webkit-flex-wrap: wrap; flex-wrap: wrap; -webkit-align-items: center; align-items: center; }
+body.playing #bar { display: none; }
+.group { display: -webkit-flex; display: flex; -webkit-align-items: center; align-items: center;
+  margin: 4px 14px 4px 0; }
+.label { font-size: 14px; color: #a8a8ae; margin-right: 8px; }
+.value { font-size: 17px; min-width: 42px; text-align: center; font-weight: 600; }
+button { height: 44px; min-width: 44px; padding: 0 14px; margin: 0 3px; border: 1px solid #4a4a50;
+  border-radius: 8px; background: #2c2c30; color: #fff; font-size: 16px; font-family: inherit;
+  -webkit-appearance: none; appearance: none; }
+button:active { background: #55555c; }
+button.primary { background: #1f7a4d; border-color: #2c9c65; font-weight: 600; min-width: 104px; }
+button.on { background: #e8e8ea; color: #111; border-color: #e8e8ea; font-weight: 600; }
+input[type=range] { width: 170px; margin: 0 6px; }
+
+/* Okurken görünen küçük hız düğmeleri */
+#mini { position: absolute; right: 10px; bottom: 10px; display: none; opacity: 0.45; }
+body.playing #mini { display: -webkit-flex; display: flex; -webkit-align-items: center; align-items: center; }
+#mini button { background: #000; }
+#miniInfo { font-size: 15px; color: #fff; margin: 0 6px; min-width: 96px; text-align: center; }
+
+#progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: #e5484d; }
+
+/* Metin düzenleme ekranı */
+#editor { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: #111; display: none; }
+body.editing #editor { display: block; }
+#editorBar { position: absolute; top: 0; left: 0; right: 0; height: 62px; padding: 8px 10px;
+  background: #1b1b1d; border-bottom: 1px solid #38383c; }
+#editorTitle { font-size: 17px; font-weight: 600; margin-left: 8px; line-height: 44px; }
+#editorDone { float: right; }
+#editorClear { float: right; }
+#source { position: absolute; top: 62px; left: 0; right: 0; bottom: 0; width: 100%; padding: 16px;
+  border: 0; outline: 0; resize: none; background: #111; color: #fff; font-size: 20px; line-height: 1.45;
+  font-family: inherit; -webkit-user-select: text; user-select: text; -webkit-appearance: none; border-radius: 0; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="mirror">
+    <div id="scroller"><div id="text"></div></div>
+    <div id="guideL" class="guide"></div>
+    <div id="guideR" class="guide"></div>
+  </div>
+  <div id="progress"></div>
+</div>
+
+<div id="bar">
+  <div class="group">
+    <button id="play" class="primary">Başlat</button>
+    <button id="restart">Başa dön</button>
+  </div>
+  <div class="group">
+    <span class="label">Hız</span>
+    <button id="speedDown">&minus;</button>
+    <input id="speed" type="range" min="5" max="250" step="5">
+    <button id="speedUp">+</button>
+    <span id="speedValue" class="value"></span>
+  </div>
+  <div class="group">
+    <span class="label">Yazı</span>
+    <button id="sizeDown">A&minus;</button>
+    <span id="sizeValue" class="value"></span>
+    <button id="sizeUp">A+</button>
+  </div>
+  <div class="group">
+    <button id="mirrorBtn">Ayna</button>
+    <button id="flipBtn">Baş aşağı</button>
+    <button id="edit">Metin</button>
+  </div>
+</div>
+
+<div id="mini">
+  <button id="miniDown">&minus;</button>
+  <span id="miniInfo"></span>
+  <button id="miniUp">+</button>
+</div>
+
+<div id="editor">
+  <div id="editorBar">
+    <button id="editorDone" class="primary">Bitti</button>
+    <button id="editorClear">Temizle</button>
+    <span id="editorTitle">Metni yazın veya yapıştırın</span>
+  </div>
+  <textarea id="source" autocapitalize="sentences" autocorrect="off" spellcheck="false"></textarea>
+</div>
+
+<script>
+/* Eski Safari (iOS 9) için yalnızca ES5 kullanılır. */
+(function () {
+  'use strict';
+
+  var STORE_KEY = 'prompter.v1';
+  var MIN_SPEED = 5, MAX_SPEED = 250, SPEED_STEP = 5;
+  var MIN_SIZE = 24, MAX_SIZE = 160, SIZE_STEP = 4;
+  var LINE_HEIGHT = 1.35;
+  var TAP_DISTANCE = 10;
+
+  var SAMPLE = 'Merhaba, hoş geldiniz.\n\n' +
+    'Bu örnek metni "Metin" düğmesinden kendi metninizle değiştirebilirsiniz.\n\n' +
+    'Ekrana dokunarak başlatıp durdurabilirsiniz. Durmuşken parmağınızla sürükleyerek metni ileri ve geri alabilirsiniz.\n\n' +
+    'Okurken sağ alttaki eksi ve artı düğmeleri hızı değiştirir.\n\n' +
+    'Kırmızı oklar okuma hizasını gösterir. Cümlenizi bu hizada okuyun.\n\n' +
+    'İyi çekimler.';
+
+  /* Telefon ekranında başlangıç yazısı daha küçük olur */
+  var state = { text: SAMPLE, speed: 40, size: window.innerWidth < 600 ? 40 : 64, mirror: true, flip: false };
+
+  var els = {};
+  var ids = ['stage', 'mirror', 'scroller', 'text', 'guideL', 'guideR', 'progress', 'bar', 'play', 'restart',
+    'speedDown', 'speed', 'speedUp', 'speedValue', 'sizeDown', 'sizeValue', 'sizeUp', 'mirrorBtn', 'flipBtn',
+    'edit', 'mini', 'miniDown', 'miniInfo', 'miniUp', 'editor', 'editorDone', 'editorClear', 'source'];
+  for (var i = 0; i < ids.length; i++) { els[ids[i]] = document.getElementById(ids[i]); }
+
+  var pos = 0, maxPos = 0, playing = false, lastTime = 0, frame = 0, saveTimer = 0;
+
+  function load() {
+    try {
+      var raw = window.localStorage.getItem(STORE_KEY);
+      if (!raw) { return; }
+      var saved = JSON.parse(raw);
+      for (var k in state) {
+        if (state.hasOwnProperty(k) && saved.hasOwnProperty(k)) { state[k] = saved[k]; }
+      }
+    } catch (e) { /* kayıt yoksa varsayılanlarla devam */ }
+  }
+
+  function save() {
+    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* gizli modda kaydedilmez */ }
+  }
+
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  function setTransform(el, value) { el.style.webkitTransform = value; el.style.transform = value; }
+
+  function formatTime(seconds) {
+    var s = Math.max(0, Math.ceil(seconds));
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function renderPosition() {
+    setTransform(els.scroller, 'translate3d(0,' + (-Math.round(pos)) + 'px,0)');
+    els.progress.style.width = (maxPos > 0 ? (pos / maxPos) * 100 : 0) + '%';
+    els.miniInfo.textContent = state.speed + ' · ' + formatTime((maxPos - pos) / state.speed);
+  }
+
+  function layout() {
+    var h = window.innerHeight;
+    var readLine = Math.round(h * 0.3);
+    var ratio = maxPos > 0 ? pos / maxPos : 0;
+    els.text.style.fontSize = state.size + 'px';
+    els.text.style.paddingTop = readLine + 'px';
+    els.text.style.paddingBottom = h + 'px';
+    var guideTop = (readLine + Math.round(state.size * LINE_HEIGHT / 2)) + 'px';
+    els.guideL.style.top = guideTop;
+    els.guideR.style.top = guideTop;
+    /* Metnin son satırı okuma hizasına geldiğinde kaydırma biter */
+    maxPos = Math.max(0, els.text.offsetHeight - readLine - h);
+    pos = clamp(ratio * maxPos, 0, maxPos);
+    renderPosition();
+  }
+
+  function renderControls() {
+    els.speed.value = state.speed;
+    els.speedValue.textContent = state.speed;
+    els.sizeValue.textContent = state.size;
+    els.mirrorBtn.className = state.mirror ? 'on' : '';
+    els.flipBtn.className = state.flip ? 'on' : '';
+    setTransform(els.mirror, 'scale(' + (state.mirror ? -1 : 1) + ',' + (state.flip ? -1 : 1) + ')');
+    renderPosition();
+  }
+
+  function setSpeed(v) {
+    state.speed = clamp(Math.round(v / SPEED_STEP) * SPEED_STEP, MIN_SPEED, MAX_SPEED);
+    renderControls();
+    save();
+  }
+
+  function setSize(v) {
+    state.size = clamp(v, MIN_SIZE, MAX_SIZE);
+    layout();
+    renderControls();
+    save();
+  }
+
+  function tick(now) {
+    if (!playing) { return; }
+    var dt = lastTime ? (now - lastTime) / 1000 : 0;
+    lastTime = now;
+    /* Eski cihazda kare atlansa da hız sabit kalsın; uzun duraklamada metin sıçramasın */
+    if (dt > 0.5) { dt = 0.5; }
+    pos += state.speed * dt;
+    if (pos >= maxPos) {
+      pos = maxPos;
+      renderPosition();
+      pause();
+      return;
+    }
+    renderPosition();
+    frame = window.requestAnimationFrame(tick);
+  }
+
+  function play() {
+    if (playing) { return; }
+    if (pos >= maxPos) { pos = 0; }
+    playing = true;
+    lastTime = 0;
+    document.body.className = 'playing';
+    els.play.textContent = 'Duraklat';
+    layout();
+    frame = window.requestAnimationFrame(tick);
+  }
+
+  function pause() {
+    playing = false;
+    if (frame) { window.cancelAnimationFrame(frame); frame = 0; }
+    document.body.className = '';
+    els.play.textContent = 'Başlat';
+  }
+
+  function toggle() { if (playing) { pause(); } else { play(); } }
+
+  function restart() {
+    pause();
+    pos = 0;
+    renderPosition();
+  }
+
+  function isEditing() { return document.body.className === 'editing'; }
+
+  function openEditor() {
+    pause();
+    els.source.value = state.text;
+    document.body.className = 'editing';
+  }
+
+  function closeEditor() {
+    state.text = els.source.value;
+    els.text.textContent = state.text;
+    document.body.className = '';
+    els.source.blur();
+    pos = 0;
+    maxPos = 0;
+    layout();
+    save();
+  }
+
+  function on(el, name, fn) { el.addEventListener(name, fn, false); }
+
+  on(els.play, 'click', toggle);
+  on(els.restart, 'click', restart);
+  on(els.speedDown, 'click', function () { setSpeed(state.speed - SPEED_STEP); });
+  on(els.speedUp, 'click', function () { setSpeed(state.speed + SPEED_STEP); });
+  on(els.miniDown, 'click', function () { setSpeed(state.speed - SPEED_STEP); });
+  on(els.miniUp, 'click', function () { setSpeed(state.speed + SPEED_STEP); });
+  on(els.speed, 'input', function () { setSpeed(parseInt(els.speed.value, 10)); });
+  on(els.speed, 'change', function () { setSpeed(parseInt(els.speed.value, 10)); });
+  on(els.sizeDown, 'click', function () { setSize(state.size - SIZE_STEP); });
+  on(els.sizeUp, 'click', function () { setSize(state.size + SIZE_STEP); });
+  on(els.mirrorBtn, 'click', function () { state.mirror = !state.mirror; renderControls(); save(); });
+  on(els.flipBtn, 'click', function () { state.flip = !state.flip; renderControls(); save(); });
+  on(els.edit, 'click', openEditor);
+  on(els.editorDone, 'click', closeEditor);
+  on(els.editorClear, 'click', function () { els.source.value = ''; els.source.focus(); });
+  on(els.source, 'input', function () {
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(function () { state.text = els.source.value; save(); }, 400);
+  });
+
+  /* Sahne: dokununca başlat/durdur, sürükleyince konum değiştir */
+  var touchY = 0, touchStartY = 0, touchMoved = false, mouseDown = false;
+
+  function dragStart(y) { touchY = y; touchStartY = y; touchMoved = false; }
+
+  function dragMove(y) {
+    if (Math.abs(y - touchStartY) > TAP_DISTANCE) { touchMoved = true; }
+    if (touchMoved) {
+      var delta = y - touchY;
+      pos = clamp(pos + (state.flip ? delta : -delta), 0, maxPos);
+      renderPosition();
+    }
+    touchY = y;
+  }
+
+  function dragEnd() { if (!touchMoved) { toggle(); } }
+
+  on(els.stage, 'touchstart', function (e) { dragStart(e.touches[0].clientY); });
+  on(els.stage, 'touchmove', function (e) { e.preventDefault(); dragMove(e.touches[0].clientY); });
+  on(els.stage, 'touchend', function (e) { e.preventDefault(); dragEnd(); });
+  on(els.stage, 'mousedown', function (e) { mouseDown = true; dragStart(e.clientY); });
+  on(els.stage, 'mousemove', function (e) { if (mouseDown) { dragMove(e.clientY); } });
+  on(els.stage, 'mouseup', function () { if (mouseDown) { mouseDown = false; dragEnd(); } });
+
+  /* Sayfanın lastik gibi esnemesini engelle; kaydırıcı çalışmaya devam eder */
+  function stopBounce(e) { if (e.target !== els.speed) { e.preventDefault(); } }
+  on(els.bar, 'touchmove', stopBounce);
+  on(els.mini, 'touchmove', stopBounce);
+
+  /* Bluetooth klavye veya kumanda */
+  on(document, 'keydown', function (e) {
+    if (isEditing()) { return; }
+    var code = e.keyCode;
+    if (code === 32) { e.preventDefault(); toggle(); }
+    else if (code === 38) { e.preventDefault(); setSpeed(state.speed + SPEED_STEP); }
+    else if (code === 40) { e.preventDefault(); setSpeed(state.speed - SPEED_STEP); }
+    else if (code === 37) { e.preventDefault(); setSize(state.size - SIZE_STEP); }
+    else if (code === 39) { e.preventDefault(); setSize(state.size + SIZE_STEP); }
+    else if (code === 13 || code === 34) { e.preventDefault(); toggle(); }
+    else if (code === 33) {
+      e.preventDefault();
+      pos = clamp(pos - window.innerHeight * 0.25, 0, maxPos);
+      renderPosition();
+    }
+    else if (code === 82) { restart(); }
+  });
+
+  on(window, 'resize', layout);
+  on(window, 'orientationchange', function () { window.setTimeout(layout, 300); });
+  on(document, 'visibilitychange', function () {
+    if (document.hidden) { pause(); } else { keepScreenOn(); }
+  });
+
+  /* Yeni tarayıcılarda ekranın kapanmasını engeller; eskilerde sessizce atlanır */
+  var wakeLock = null;
+  function keepScreenOn() {
+    if (wakeLock || !navigator.wakeLock || document.hidden) { return; }
+    navigator.wakeLock.request('screen').then(function (lock) {
+      wakeLock = lock;
+      lock.addEventListener('release', function () { wakeLock = null; });
+    }, function () { /* izin yoksa bir sonraki dokunuşta yeniden denenir */ });
+  }
+  on(document, 'click', keepScreenOn);
+  on(document, 'touchend', keepScreenOn);
+
+  /* PWA: çevrimdışı çalışma (iOS 9'da yoktur, orada appcache kullanılır) */
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(null, function () { /* HTTP adreslerde çalışmaz */ });
+  }
+
+  /* Yeni sürüm yayımlanırsa çevrimdışı kopyayı güncelle */
+  if (window.applicationCache) {
+    on(window.applicationCache, 'updateready', function () {
+      try { window.applicationCache.swapCache(); window.location.reload(); } catch (e) { /* sonraki açılışta */ }
+    });
+  }
+
+  load();
+  els.text.textContent = state.text;
+  layout();
+  renderControls();
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+CACHE MANIFEST
+# v2
+
+CACHE:
+index.html
+apple-touch-icon.png
+
+NETWORK:
+*
